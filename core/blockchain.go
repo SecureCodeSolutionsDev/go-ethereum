@@ -369,8 +369,9 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 				}
 			} else {
 				log.Warn("Head state missing, repairing", "number", head.Number, "hash", head.Hash())
-				if _, err := bc.setHeadBeyondRoot(head.Number.Uint64(), 0, common.Hash{}, true); err != nil {
-					return nil, err
+				if _, err := bc.setHeadBeyondRoot(head, 0, common.Hash{}, false); err != nil {
+    log.Error("Failed to set head", "head", head, "err", err)
+    return err
 				}
 			}
 		}
@@ -492,8 +493,10 @@ func (bc *BlockChain) loadLastState() error {
 	if head == (common.Hash{}) {
 		// Corrupt or empty database, init from scratch
 		log.Warn("Empty database, resetting chain")
-		return bc.Reset()
-	}
+if err := bc.Reset(); err != nil {
+    log.Error("Failed to reset chain after empty database", "err", err)
+    return err
+}
 	// Make sure the entire head block is available
 	headBlock := bc.GetBlockByHash(head)
 	if headBlock == nil {
@@ -661,7 +664,7 @@ func (bc *BlockChain) rewindHashHead(head *types.Header, root common.Hash) (*typ
 			logged = time.Now()
 			logger = log.Info
 		}
-		logger("Block state missing, rewinding further", "number", head.Number, "hash", head.Hash(), "elapsed", common.PrettyDuration(time.Since(start)))
+		log.Info("Block state missing, rewinding further", "number", head.Number, "hash", head.Hash(), "elapsed", common.PrettyDuration(time.Since(start)))
 
 		// If a root threshold was requested but not yet crossed, check
 		if !beyondRoot && head.Root == root {
@@ -807,9 +810,10 @@ func (bc *BlockChain) rewindHead(head *types.Header, root common.Hash) (*types.H
 // The method returns the block number where the requested root cap was found.
 func (bc *BlockChain) setHeadBeyondRoot(head uint64, time uint64, root common.Hash, repair bool) (uint64, error) {
 	if !bc.chainmu.TryLock() {
-		return 0, errChainStopped
-	}
-	defer bc.chainmu.Unlock()
+    log.Warn("Chain stopped; unable to lock for setting head")
+    return errChainStopped
+}
+defer bc.chainmu.Unlock()
 
 	var (
 		// Track the block number of the requested root hash
